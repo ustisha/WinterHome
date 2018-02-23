@@ -356,8 +356,6 @@ void toSettings() {
 
 void setup(void) {
 
-//    Serial.begin(57600);
-
     ctrl = new Controller(OLED_CS, OLED_DC, OLED_RESET);
     task = new Task();
     task->each(updateDHT22, 8000);
@@ -365,45 +363,10 @@ void setup(void) {
 
     sw1 = new Switcher(ENCODERSW);
     sw1->addHandler(toSettings, Switcher::DEFAULT_PRESS);
-
-//    sw1->addHandler(swlong, Switcher::DEFAULT_LONG);
-
-
-//    if (!LoRa.begin(433E6)) {
-//        Serial.println("Starting LoRa failed!");
-//        while (1);
-//    }
-//    LoRa.setTxPower(17);
-//    LoRa.setSpreadingFactor(12);
-//    LoRa.setSignalBandwidth(41.7E3);
-//    LoRa.enableCrc();
-
-
 }
 
 void loop(void) {
     ctrl->tick();
     task->tick();
     sw1->tick();
-
-//    Serial.print("Sending packet: ");
-//    Serial.println(counter);
-//
-//    LoRa.beginPacket();
-//    LoRa.print("hello ");
-//    LoRa.print(counter);
-//    LoRa.endPacket();
-//
-//    Serial.print("OLED Print: ");
-//    Serial.println(counter);
-//
-//    u8g2.clearBuffer();                    // clear the internal memory
-//    u8g2.setFont(u8g2_font_ncenB14_tr);    // choose a suitable font
-//    u8g2.setCursor(0, 15);
-//    u8g2.print("hello ");
-//    u8g2.print(counter);
-//    u8g2.sendBuffer();                    // transfer internal memory to the display
-//
-//    counter++;
-//    delay(2000);
 }

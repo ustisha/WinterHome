@@ -10,3 +10,11 @@
  
 **Домашний блок (home)**
 * _Не рализовано_
+
+**Библиотеки необходимы для работы**
+* https://github.com/thijse/Arduino-EEPROMEx
+* https://github.com/sandeepmistry/arduino-LoRa 
+* https://github.com/mathertel/RotaryEncoder
+* https://github.com/olikraus/u8g2
+
+Cmake для CLion https://github.com/TimReset/arduino-cmake
