@@ -35,22 +35,28 @@ protected:
     float currentTemp = 0;
     float currentHum = 0;
 
-    int r1ThresholdAddress;
+    uint8_t r1ThresholdAddress;
     float r1Threshold = 0.5;
-    int r2ThresholdAddress;
+    uint8_t r2ThresholdAddress;
     float r2Threshold = 1;
-    int requiredTempAddress;
+    uint8_t requiredTempAddress;
     float requiredTemp = 5;
 
     RotaryEncoder *encoder;
     long prevPosition = 0;
-    int angleAddress;
-    long angle = 0;
+    uint8_t angleAddress;
+    uint8_t angle = 0;
     uint8_t displayState = STATE_INIT;
 
     Servo *srv;
 
+    union Float {
+        float f;
+        uint8_t b[sizeof(float)];
+    };
+
     char tempText[23]{};
+    char setupText[20]{};
     char r1Text[11]{};
     char r2Text[11]{};
 
@@ -119,12 +125,12 @@ protected:
         }
 
         char angleOutput[6]{};
-        sprintf(angleOutput, "%ld%%", round(angle / 2));
+        sprintf(angleOutput, "%ld%%", round((uint8_t) angle / 2));
         oled->drawUTF8(94, 32, angleOutput);
     }
 
     void displayTemp() {
-        oled->drawUTF8(40, 10, "установка");
+        oled->drawUTF8(40, 10, setupText);
         oled->drawUTF8(34, 20, "температуры");
     }
 
@@ -135,7 +141,7 @@ protected:
     }
 
     void displayRelay(uint8_t relayPin) {
-        oled->drawUTF8(40, 10, "установка");
+        oled->drawUTF8(40, 10, setupText);
         if (relayPin == R1) {
             oled->drawUTF8(50, 24, r1Text);
         } else if (relayPin == R2) {
@@ -201,6 +207,7 @@ public:
 
     Controller(uint8_t cs, uint8_t dc, uint8_t reset) {
         strcpy(tempText, "температура");
+        strcpy(setupText, "установка");
         strcpy(r1Text, "реле 1");
         strcpy(r2Text, "реле 2");
 
@@ -212,19 +219,28 @@ public:
         EEPROM.setMemPool(0, EEPROMSizeNano);
         EEPROM.isReady();
 
-        requiredTempAddress = EEPROM.getAddress(sizeof(float));
-        r1ThresholdAddress = EEPROM.getAddress(sizeof(float));
-        r2ThresholdAddress = EEPROM.getAddress(sizeof(float));
-        angleAddress = EEPROM.getAddress(sizeof(long));
+        requiredTempAddress = (uint8_t) EEPROM.getAddress(sizeof(float));
+        r1ThresholdAddress = (uint8_t) EEPROM.getAddress(sizeof(float));
+        r2ThresholdAddress = (uint8_t) EEPROM.getAddress(sizeof(float));
+        angleAddress = (uint8_t) EEPROM.getAddress(sizeof(long));
 
         requiredTemp = EEPROM.readFloat(requiredTempAddress);
         r1Threshold = EEPROM.readFloat(r1ThresholdAddress);
         r2Threshold = EEPROM.readFloat(r2ThresholdAddress);
-        angle = EEPROM.readLong(angleAddress);
+        angle = EEPROM.readByte(angleAddress);
 
         oled = new U8G2_SH1106_128X64_NONAME_F_4W_HW_SPI(U8G2_R0, cs, dc, reset);
         oled->begin();
         render();
+
+        if (!LoRa.begin(433E6)) {
+            // @todo LoRa isn't started to display
+            while (1);
+        }
+
+        LoRa.setTxPower(17);
+        LoRa.setSpreadingFactor(12);
+        LoRa.enableCrc();
 
         srv = new Servo();
         srv->attach(SRV, 600, 3000);
@@ -298,6 +314,33 @@ public:
         return this->displayState;
     }
 
+    void onReceive(int packetSize) {
+        // @todo Принимать удаленные команды.
+    }
+
+    void sendData() {
+        LoRa.beginPacket();
+
+        Float temp{};
+        temp.f = this->currentTemp;
+        LoRa.write(temp.b[0]);
+        LoRa.write(temp.b[1]);
+        LoRa.write(temp.b[2]);
+        LoRa.write(temp.b[3]);
+
+        Float hum{};
+        hum.f = this->currentHum;
+        LoRa.write(hum.b[0]);
+        LoRa.write(hum.b[1]);
+        LoRa.write(hum.b[2]);
+        LoRa.write(hum.b[3]);
+
+        LoRa.write(angle);
+        LoRa.write((uint8_t) relayIsOn(R1));
+        LoRa.write((uint8_t) relayIsOn(R2));
+        LoRa.endPacket();
+    }
+
     void tick() {
         this->tempControl();
         this->encoder->tick();
@@ -337,6 +380,10 @@ void updateDHT22() {
     ctrl->updateDHT22();
 }
 
+void sendData() {
+    ctrl->sendData();
+}
+
 void toDisplay() {
     ctrl->updateDHT22();
     ctrl->setDisplayState(Controller::STATE_DISPLAY);
@@ -357,8 +404,10 @@ void toSettings() {
 void setup(void) {
 
     ctrl = new Controller(OLED_CS, OLED_DC, OLED_RESET);
+
     task = new Task();
     task->each(updateDHT22, 8000);
+    task->each(sendData, 5000);
     task->one(toDisplay, 2000);
 
     sw1 = new Switcher(ENCODERSW);
