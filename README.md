@@ -17,4 +17,4 @@
 * https://github.com/mathertel/RotaryEncoder
 * https://github.com/olikraus/u8g2
 
-Cmake для CLion https://github.com/TimReset/arduino-cmake
+Cmake для CLion + Arduino https://github.com/altexdim/arduino-cmake
