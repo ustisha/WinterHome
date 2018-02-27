@@ -5,6 +5,8 @@ set(PROJECT_NAME home)
 project(${PROJECT_NAME} C CXX)
 
 set(${PROJECT_NAME}_BOARD nano)
+set(${PROJECT_NAME}_BOARD_CPU atmega328)
+set(nano.build.mcu "atmega328p")
 
 # Define the source code
 set(${PROJECT_NAME}_SRCS main.cpp)

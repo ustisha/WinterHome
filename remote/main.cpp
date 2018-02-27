@@ -11,6 +11,7 @@
 #include <Switcher.h>
 #include <EEPROMex.h>
 #include <EEPROMvar.h>
+#include <Controller.h>
 
 const uint8_t OLED_CS = 8;
 const uint8_t OLED_DC = 6;
@@ -18,22 +19,12 @@ const uint8_t OLED_RESET = 5;
 
 const uint8_t SRV = 3;
 
-const uint8_t R1 = A0;
-const uint8_t R2 = A1;
-
 const uint8_t DHT22 = 7;
 
-const uint8_t ENCODER1 = A2;
-const uint8_t ENCODER2 = A3;
-const uint8_t ENCODERSW = A7;
-
-class Controller {
+class RemoteController : public Controller {
 protected:
-    U8G2_SH1106_128X64_NONAME_F_4W_HW_SPI *oled;
     DHT *dht;
     bool dhtIsError = false;
-    float currentTemp = 0;
-    float currentHum = 0;
 
     uint8_t r1ThresholdAddress;
     float r1Threshold = 0.5;
@@ -43,94 +34,35 @@ protected:
     float requiredTemp = 5;
 
     RotaryEncoder *encoder;
-    long prevPosition = 0;
+    uint16_t prevPosition = 0;
     uint8_t angleAddress;
-    uint8_t angle = 0;
     uint8_t displayState = STATE_INIT;
 
     Servo *srv;
 
-    union Float {
-        float f;
-        uint8_t b[sizeof(float)];
-    };
-
-    char tempText[23]{};
-    char setupText[20]{};
-    char r1Text[11]{};
-    char r2Text[11]{};
-
     void displayInfo() {
         char delimiter[] = ": ";
         char text[33]{};
-        strcat(text, tempText);
+        strcat(text, "температура");
         strcat(text, delimiter);
         Format::temperature(text, requiredTemp);
         oled->drawUTF8(4, 16, text);
 
         char rText[20]{};
-        strcat(rText, r1Text);
+        strcat(rText, "реле 1");
         strcat(rText, delimiter);
         Format::temperature(rText, r1Threshold);
         oled->drawUTF8(4, 34, rText);
 
         rText[0] = 0;
-        strcat(rText, r2Text);
+        strcat(rText, "реле 2");
         strcat(rText, delimiter);
         Format::temperature(rText, r2Threshold);
         oled->drawUTF8(4, 52, rText);
     }
 
-    void display() {
-        oled->drawUTF8(16, 10, "темп.");
-        oled->drawUTF8(60, 10, "влаж.");
-        oled->drawUTF8(98, 10, "вент.");
-
-        if (relayIsOn(R1)) {
-            oled->drawBox(20, 42, 40, 18);
-            oled->setDrawColor(2);
-            oled->setFontMode(1);
-        } else {
-            oled->drawFrame(20, 42, 40, 18);
-            oled->setDrawColor(1);
-            oled->setFontMode(0);
-        }
-        oled->drawUTF8(24, 55, r1Text);
-
-        if (relayIsOn(R2)) {
-            oled->drawBox(64, 42, 40, 18);
-            oled->setDrawColor(2);
-            oled->setFontMode(1);
-        } else {
-            oled->drawFrame(64, 42, 40, 18);
-            oled->setDrawColor(1);
-            oled->setFontMode(0);
-        }
-        oled->drawUTF8(69, 55, r2Text);
-    }
-
-    void display16() {
-        if (dhtIsError) {
-            oled->drawUTF8(10, 32, "ERR!");
-        } else {
-            char tempOutput[10]{};
-            Format::temperature(tempOutput, currentTemp);
-            oled->drawUTF8(2, 32, tempOutput);
-        }
-
-        if (!dhtIsError) {
-            char humOutput[6]{};
-            Format::humidity(humOutput, currentHum);
-            oled->drawUTF8(58, 32, humOutput);
-        }
-
-        char angleOutput[6]{};
-        sprintf(angleOutput, "%ld%%", round((uint8_t) angle / 2));
-        oled->drawUTF8(94, 32, angleOutput);
-    }
-
     void displayTemp() {
-        oled->drawUTF8(40, 10, setupText);
+        oled->drawUTF8(40, 10, "установка");
         oled->drawUTF8(34, 20, "температуры");
     }
 
@@ -141,11 +73,11 @@ protected:
     }
 
     void displayRelay(uint8_t relayPin) {
-        oled->drawUTF8(40, 10, setupText);
+        oled->drawUTF8(40, 10, "установка");
         if (relayPin == R1) {
-            oled->drawUTF8(50, 24, r1Text);
+            oled->drawUTF8(50, 24, "реле 1");
         } else if (relayPin == R2) {
-            oled->drawUTF8(50, 24, r2Text);
+            oled->drawUTF8(50, 24, "реле 2");
         }
     }
 
@@ -159,7 +91,7 @@ protected:
         oled->drawUTF8(38, 47, tempOutput);
     }
 
-    bool relayIsOn(uint8_t pin) {
+    bool relayIsOn(uint8_t pin) override {
         return !digitalRead(pin);
     }
 
@@ -167,7 +99,7 @@ protected:
         bool change = !relayIsOn(pin);
         digitalWrite(pin, LOW);
         if (change) {
-            this->render();
+            render();
         }
     }
 
@@ -175,7 +107,7 @@ protected:
         bool change = relayIsOn(pin);
         digitalWrite(pin, HIGH);
         if (change) {
-            this->render();
+            render();
         }
     }
 
@@ -205,12 +137,7 @@ public:
     const static uint8_t STATE_SET_R1 = 3;
     const static uint8_t STATE_SET_R2 = 4;
 
-    Controller(uint8_t cs, uint8_t dc, uint8_t reset) {
-        strcpy(tempText, "температура");
-        strcpy(setupText, "установка");
-        strcpy(r1Text, "реле 1");
-        strcpy(r2Text, "реле 2");
-
+    RemoteController(uint8_t cs, uint8_t dc, uint8_t reset) : Controller(cs, dc, reset) {
         pinMode(R1, OUTPUT);
         pinMode(R2, OUTPUT);
         digitalWrite(R1, HIGH);
@@ -229,29 +156,25 @@ public:
         r2Threshold = EEPROM.readFloat(r2ThresholdAddress);
         angle = EEPROM.readByte(angleAddress);
 
-        oled = new U8G2_SH1106_128X64_NONAME_F_4W_HW_SPI(U8G2_R0, cs, dc, reset);
-        oled->begin();
-        render();
-
-        if (!LoRa.begin(433E6)) {
-            // @todo LoRa isn't started to display
-            while (1);
-        }
-
-        LoRa.setTxPower(17);
-        LoRa.setSpreadingFactor(12);
-        LoRa.enableCrc();
-
         srv = new Servo();
         srv->attach(SRV, 600, 3000);
-        updateSrv();
+        updateSrv(0);
 
         dht = new DHT();
-        encoder = new RotaryEncoder(ENCODER1, ENCODER2);
+        encoder = new RotaryEncoder(A2, A3);
     }
 
-    void updateSrv() {
+    void updateSrv(int16_t diff) {
+        angle += diff * 10;
+        if (angle < 0) {
+            angle = 0;
+        }
+        if (angle > 180) {
+            angle = 180;
+        }
         srv->write(angle);
+        EEPROM.updateLong(angleAddress, angle);
+        render();
     }
 
     void updateDHT22() {
@@ -269,67 +192,69 @@ public:
             default:
                 break;
         }
-        this->render();
+        render();
     }
 
-    void render() {
+    void render() override {
         oled->clearBuffer();
 
         oled->drawRFrame(0, 0, 128, 64, 4);
         oled->setFont(u8g2_font_mercutio_basic_nbp_t_all);
 
-        if (this->displayState == STATE_INIT) {
-            this->displayInfo();
-        } else if (this->displayState == STATE_DISPLAY) {
-            this->display();
-        } else if (this->displayState == STATE_SET_TEMP) {
-            this->displayTemp();
-        } else if (this->displayState == STATE_SET_R1) {
-            this->displayRelay(R1);
-        } else if (this->displayState == STATE_SET_R2) {
-            this->displayRelay(R2);
+        if (displayState == STATE_INIT) {
+            displayInfo();
+        } else if (displayState == STATE_DISPLAY) {
+            display();
+        } else if (displayState == STATE_SET_TEMP) {
+            displayTemp();
+        } else if (displayState == STATE_SET_R1) {
+            displayRelay(R1);
+        } else if (displayState == STATE_SET_R2) {
+            displayRelay(R2);
         }
 
         oled->setFont(u8g2_font_logisoso16_tf);
 
-        if (this->displayState == STATE_DISPLAY) {
-            this->display16();
-        } else if (this->displayState == STATE_SET_TEMP) {
-            this->displayTemp16();
-        } else if (this->displayState == STATE_SET_R1) {
-            this->displayRelay16(R1);
-        } else if (this->displayState == STATE_SET_R2) {
-            this->displayRelay16(R2);
+        if (displayState == STATE_DISPLAY) {
+            if (dhtIsError) {
+                oled->drawUTF8(35, 32, "ERROR!");
+            } else {
+                display16();
+            }
+        } else if (displayState == STATE_SET_TEMP) {
+            displayTemp16();
+        } else if (displayState == STATE_SET_R1) {
+            displayRelay16(R1);
+        } else if (displayState == STATE_SET_R2) {
+            displayRelay16(R2);
         }
 
         oled->sendBuffer();
     }
 
     void setDisplayState(uint8_t state) {
-        this->displayState = state;
-        this->render();
+        displayState = state;
+        render();
     }
 
     uint8_t getDisplayState() {
-        return this->displayState;
-    }
-
-    void onReceive(int packetSize) {
-        // @todo Принимать удаленные команды.
+        return displayState;
     }
 
     void sendData() {
         LoRa.beginPacket();
 
+        LoRa.write(dhtIsError ? ERR_TEMP : 0);
+
         Float temp{};
-        temp.f = this->currentTemp;
+        temp.f = currentTemp;
         LoRa.write(temp.b[0]);
         LoRa.write(temp.b[1]);
         LoRa.write(temp.b[2]);
         LoRa.write(temp.b[3]);
 
         Float hum{};
-        hum.f = this->currentHum;
+        hum.f = currentHum;
         LoRa.write(hum.b[0]);
         LoRa.write(hum.b[1]);
         LoRa.write(hum.b[2]);
@@ -338,24 +263,18 @@ public:
         LoRa.write(angle);
         LoRa.write((uint8_t) relayIsOn(R1));
         LoRa.write((uint8_t) relayIsOn(R2));
+
         LoRa.endPacket();
+        LoRa.receive();
     }
 
     void tick() {
-        this->tempControl();
-        this->encoder->tick();
-        long pos = encoder->getPosition();
+        tempControl();
+        encoder->tick();
+        uint16_t pos = (uint16_t) encoder->getPosition();
         if (pos != prevPosition) {
             if (displayState == STATE_DISPLAY) {
-                angle += (pos - prevPosition) * 5;
-                if (angle < 0) {
-                    angle = 0;
-                }
-                if (angle > 180) {
-                    angle = 180;
-                }
-                updateSrv();
-                EEPROM.updateLong(angleAddress, angle);
+                updateSrv(pos - prevPosition);
             } else if (displayState == STATE_SET_TEMP) {
                 requiredTemp += ((pos - prevPosition) / 10.0);
                 EEPROM.updateFloat(requiredTempAddress, requiredTemp);
@@ -367,12 +286,27 @@ public:
                 EEPROM.updateFloat(r2ThresholdAddress, r2Threshold);
             }
             prevPosition = pos;
-            this->render();
+            render();
+        }
+
+        int packetSize = LoRa.parsePacket();
+        if (packetSize) {
+
+            uint8_t cmd = (uint8_t) LoRa.read();
+            if (cmd == CMD_UP) {
+                updateSrv(1);
+                sendData();
+            } else if (cmd == CMD_DOWN) {
+                updateSrv(-1);
+                sendData();
+            }
+
+            snr = LoRa.packetSnr();
         }
     }
 };
 
-Controller *ctrl;
+RemoteController *ctrl;
 Task *task;
 Switcher *sw1;
 
@@ -386,31 +320,31 @@ void sendData() {
 
 void toDisplay() {
     ctrl->updateDHT22();
-    ctrl->setDisplayState(Controller::STATE_DISPLAY);
+    ctrl->setDisplayState(RemoteController::STATE_DISPLAY);
 }
 
 void toSettings() {
-    if (ctrl->getDisplayState() == Controller::STATE_DISPLAY) {
-        ctrl->setDisplayState(Controller::STATE_SET_TEMP);
-    } else if (ctrl->getDisplayState() == Controller::STATE_SET_TEMP) {
-        ctrl->setDisplayState(Controller::STATE_SET_R1);
-    } else if (ctrl->getDisplayState() == Controller::STATE_SET_R1) {
-        ctrl->setDisplayState(Controller::STATE_SET_R2);
-    } else if (ctrl->getDisplayState() == Controller::STATE_SET_R2) {
-        ctrl->setDisplayState(Controller::STATE_DISPLAY);
+    if (ctrl->getDisplayState() == RemoteController::STATE_DISPLAY) {
+        ctrl->setDisplayState(RemoteController::STATE_SET_TEMP);
+    } else if (ctrl->getDisplayState() == RemoteController::STATE_SET_TEMP) {
+        ctrl->setDisplayState(RemoteController::STATE_SET_R1);
+    } else if (ctrl->getDisplayState() == RemoteController::STATE_SET_R1) {
+        ctrl->setDisplayState(RemoteController::STATE_SET_R2);
+    } else if (ctrl->getDisplayState() == RemoteController::STATE_SET_R2) {
+        ctrl->setDisplayState(RemoteController::STATE_DISPLAY);
     }
 }
 
 void setup(void) {
-
-    ctrl = new Controller(OLED_CS, OLED_DC, OLED_RESET);
+    ctrl = new RemoteController(OLED_CS, OLED_DC, OLED_RESET);
+    ctrl->render();
 
     task = new Task();
     task->each(updateDHT22, 8000);
     task->each(sendData, 5000);
     task->one(toDisplay, 2000);
 
-    sw1 = new Switcher(ENCODERSW);
+    sw1 = new Switcher(A7);
     sw1->addHandler(toSettings, Switcher::DEFAULT_PRESS);
 }
 

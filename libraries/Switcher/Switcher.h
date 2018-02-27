@@ -1,21 +1,18 @@
-//
-// Created by ustis on 16.02.2018.
-//
-
 #ifndef ARDUINOEXAMPLE_SWITCHER_H
 #define ARDUINOEXAMPLE_SWITCHER_H
 
 class Switcher {
     static const uint8_t MAX = 3;
+    static const uint8_t ANALOG_CONNECTED = 200;
 protected:
 
     struct Callback {
         void (*cb)() = NULL;
 
-        unsigned int press = 0;
+        uint16_t press = 0;
     };
 
-    Callback arr[Switcher::MAX];
+    Callback arr[MAX];
 
     uint8_t pin;
     unsigned long start;
@@ -25,14 +22,13 @@ protected:
     int getIndex();
 
 public:
-    static const unsigned int DEFAULT_PRESS = 100;
-    static const unsigned int DEFAULT_LONG = 1000;
+    static const uint16_t DEFAULT_PRESS = 50;
 
-    Switcher(uint8_t swPin);
+    explicit Switcher(uint8_t swPin);
 
     bool isPressed();
 
-    void addHandler(void (*cb)(), unsigned int pressTime = DEFAULT_PRESS);
+    void addHandler(void (*cb)(), unsigned int pressTime);
 
     void tick();
 };

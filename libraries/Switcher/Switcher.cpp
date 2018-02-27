@@ -9,11 +9,12 @@ Switcher::Switcher(uint8_t swPin) {
 }
 
 int Switcher::getIndex() {
-    for (uint8_t i = 0; i < MAX; i++) {
+    uint8_t i = 0;
+    do {
         if (arr[i].cb == NULL) {
             return i;
         }
-    }
+    }  while (i++ <= MAX );
     return -1;
 }
 
@@ -21,7 +22,7 @@ int Switcher::sortByPress(const void *elem1, const void *elem2) {
     return ((Callback *) elem1)->press < ((Callback *) elem2)->press ? 1 : -1;
 }
 
-void Switcher::addHandler(void (*cb)(), unsigned int pressTime) {
+void Switcher::addHandler(void (*cb)(), uint16_t pressTime) {
     int i = getIndex();
     if (i >= 0) {
         arr[i].cb = cb;
@@ -32,7 +33,7 @@ void Switcher::addHandler(void (*cb)(), unsigned int pressTime) {
 
 bool Switcher::isPressed() {
     if (pin >= A0) {
-        return analogRead(pin) == 0;
+        return analogRead(pin) < Switcher::ANALOG_CONNECTED;
     } else {
         return digitalRead(pin) == 0;
     }

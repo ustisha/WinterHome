@@ -4,15 +4,16 @@
 Task::Task() = default;
 
 int Task::getIndex() {
-    for (int i = 0; i <= MAX; i++) {
+    uint8_t i = 0;
+    do {
         if (a[i].cb == NULL) {
             return i;
         }
-    }
+    }  while (i++ <= MAX );
     return -1;
 }
 
-void Task::add(void (*cb)(), unsigned long t, uint8_t type) {
+void Task::add(void (*cb)(), uint16_t t, uint8_t type) {
     int i = getIndex();
     if (i > -1) {
         a[i].cb = cb;
@@ -22,11 +23,11 @@ void Task::add(void (*cb)(), unsigned long t, uint8_t type) {
     }
 }
 
-void Task::each(void (*cb)(), unsigned long t) {
+void Task::each(void (*cb)(), uint16_t t) {
     add(cb, t, TYPE_EACH);
 }
 
-void Task::one(void (*cb)(), unsigned long t) {
+void Task::one(void (*cb)(), uint16_t t) {
     add(cb, t, TYPE_ONE);
 }
 
@@ -40,8 +41,8 @@ void Task::tick() {
             } else if (a[i].type == TYPE_ONE) {
                 a[i].cb();
                 a[i].cb = NULL;
-                a[i].last = NULL;
-                a[i].timeout = NULL;
+                a[i].last = 0;
+                a[i].timeout = 0;
             }
         }
     }
