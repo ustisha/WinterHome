@@ -47,3 +47,14 @@ void Task::tick() {
         }
     }
 }
+
+void Task::replace(void (*cb)(), uint16_t t) {
+    uint8_t i = 0;
+    do {
+        if (a[i].cb == cb) {
+            a[i].cb = cb;
+            a[i].last = millis();
+            a[i].timeout = t;
+        }
+    }  while (i++ <= MAX );
+}

@@ -28,6 +28,8 @@ public:
 
     void one(void (*cb)(), uint16_t t);
 
+    void replace(void (*cb)(), uint16_t t);
+
     void tick();
 };
 

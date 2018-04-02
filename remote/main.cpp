@@ -5,7 +5,8 @@
 #include <U8g2lib.h>
 #include <Servo.h>
 #include <Format.h>
-#include <DHT.h>
+#include <Wire.h>
+#include <BME280.h>
 #include <Task.h>
 #include <RotaryEncoder.h>
 #include <Switcher.h>
@@ -19,76 +20,35 @@ const uint8_t OLED_RESET = 5;
 
 const uint8_t SRV = 3;
 
-const uint8_t DHT22 = 7;
-
 class RemoteController : public Controller {
 protected:
-    DHT *dht;
-    bool dhtIsError = false;
-
-    uint8_t r1ThresholdAddress;
-    float r1Threshold = 0.5;
-    uint8_t r2ThresholdAddress;
-    float r2Threshold = 1;
-    uint8_t requiredTempAddress;
-    float requiredTemp = 5;
-
+    U8X8_SH1106_128X64_NONAME_4W_HW_SPI *oled;
+    BME280 *bme;
+    Servo *srv;
     RotaryEncoder *encoder;
-    uint16_t prevPosition = 0;
+
+    bool tempError = false;
+    long prevPosition = 0;
+    float r1Threshold = 0.5;
+    float r2Threshold = 1;
+    float requiredTemp = 5;
+    uint8_t r1ThresholdAddress;
+    uint8_t r2ThresholdAddress;
+    uint8_t requiredTempAddress;
     uint8_t angleAddress;
     uint8_t displayState = STATE_INIT;
 
-    Servo *srv;
-
-    void displayInfo() {
-        char delimiter[] = ": ";
-        char text[33]{};
-        strcat(text, "температура");
-        strcat(text, delimiter);
-        Format::temperature(text, requiredTemp);
-        oled->drawUTF8(4, 16, text);
-
-        char rText[20]{};
-        strcat(rText, "реле 1");
-        strcat(rText, delimiter);
-        Format::temperature(rText, r1Threshold);
-        oled->drawUTF8(4, 34, rText);
-
-        rText[0] = 0;
-        strcat(rText, "реле 2");
-        strcat(rText, delimiter);
-        Format::temperature(rText, r2Threshold);
-        oled->drawUTF8(4, 52, rText);
-    }
-
-    void displayTemp() {
-        oled->drawUTF8(40, 10, "установка");
-        oled->drawUTF8(34, 20, "температуры");
-    }
-
-    void displayTemp16() {
-        char output[8]{};
-        Format::temperature(output, requiredTemp, true);
-        oled->drawUTF8(38, 47, output);
-    }
-
     void displayRelay(uint8_t relayPin) {
-        oled->drawUTF8(40, 10, "установка");
-        if (relayPin == R1) {
-            oled->drawUTF8(50, 24, "реле 1");
-        } else if (relayPin == R2) {
-            oled->drawUTF8(50, 24, "реле 2");
-        }
-    }
-
-    void displayRelay16(uint8_t relayPin) {
         char tempOutput[10]{};
+        oled->drawUTF8(5, 0, "setup");
         if (relayPin == R1) {
-            Format::temperature(tempOutput, r1Threshold);
+            Format::temperature(tempOutput, r1Threshold, true);
+            oled->drawUTF8(4, 1, "relay 1");
         } else if (relayPin == R2) {
-            Format::temperature(tempOutput, r2Threshold);
+            Format::temperature(tempOutput, r2Threshold, true);
+            oled->drawUTF8(4, 1, "relay 2");
         }
-        oled->drawUTF8(38, 47, tempOutput);
+        oled->drawUTF8(5, 3, tempOutput);
     }
 
     bool relayIsOn(uint8_t pin) override {
@@ -112,14 +72,14 @@ protected:
     }
 
     void tempControl() {
-        if (dhtIsError) {
+        if (tempError) {
             relayOff(R1);
             relayOff(R2);
             return;
         }
-        if (currentTemp <= (requiredTemp - r1Threshold)) {
+        if (currentTemp.f <= (requiredTemp - r1Threshold)) {
             relayOn(R1);
-            if (currentTemp <= (requiredTemp - r2Threshold)) {
+            if (currentTemp.f <= (requiredTemp - r2Threshold)) {
                 relayOn(R2);
             } else {
                 relayOff(R2);
@@ -143,6 +103,9 @@ public:
         digitalWrite(R1, HIGH);
         digitalWrite(R2, HIGH);
 
+        oled = new U8X8_SH1106_128X64_NONAME_4W_HW_SPI(cs, dc, reset);
+        oled->begin();
+
         EEPROM.setMemPool(0, EEPROMSizeNano);
         EEPROM.isReady();
 
@@ -154,82 +117,117 @@ public:
         requiredTemp = EEPROM.readFloat(requiredTempAddress);
         r1Threshold = EEPROM.readFloat(r1ThresholdAddress);
         r2Threshold = EEPROM.readFloat(r2ThresholdAddress);
-        angle = EEPROM.readByte(angleAddress);
+        angle.i = EEPROM.readInt(angleAddress);
 
         srv = new Servo();
         srv->attach(SRV, 600, 3000);
         updateSrv(0);
 
-        dht = new DHT();
+        bme = new BME280();
+        bme->begin(0x76);
+
         encoder = new RotaryEncoder(A2, A3);
     }
 
-    void updateSrv(int16_t diff) {
-        angle += diff * 10;
-        if (angle < 0) {
-            angle = 0;
+    void updateSrv(long diff) {
+        angle.i += diff * 10;
+        if (angle.i < 0) {
+            angle.i = 0;
         }
-        if (angle > 180) {
-            angle = 180;
+        if (angle.i > 180) {
+            angle.i = 180;
         }
-        srv->write(angle);
-        EEPROM.updateLong(angleAddress, angle);
+        srv->write(angle.i);
+        EEPROM.updateInt(angleAddress, angle.i);
         render();
     }
 
-    void updateDHT22() {
-        int chk = dht->read22(DHT22);
-        switch (chk) {
-            case DHTLIB_OK:
-                currentTemp = dht->temperature;
-                currentHum = dht->humidity;
-                break;
-            case DHTLIB_ERROR_CHECKSUM:
-            case DHTLIB_ERROR_TIMEOUT:
-                dhtIsError = true;
-                currentTemp = 0;
-                currentHum = 0;
-            default:
-                break;
-        }
+    void updateBME() {
+        bme->getData(&currentTemp.f, &currentPressure.f, &currentHum.f);
+        bool m, update;
+        bme->getStatus(&m, &update);
+        tempError = m;
         render();
     }
 
     void render() override {
-        oled->clearBuffer();
-
-        oled->drawRFrame(0, 0, 128, 64, 4);
-        oled->setFont(u8g2_font_mercutio_basic_nbp_t_all);
+        oled->clearDisplay();
+        oled->setFont(u8x8_font_pxplusibmcgathin_f);
 
         if (displayState == STATE_INIT) {
-            displayInfo();
+            char text[16]{};
+            strcat(text, "   Temp: ");
+            Format::temperature(text, requiredTemp);
+            oled->drawUTF8(0, 0, text);
+
+            text[0] = 0;
+            strcat(text, "Relay 1: ");
+            Format::temperature(text, r1Threshold);
+            oled->drawUTF8(0, 2, text);
+
+            text[0] = 0;
+            strcat(text, "Relay 2: ");
+            Format::temperature(text, r2Threshold);
+            oled->drawUTF8(0, 4, text);
         } else if (displayState == STATE_DISPLAY) {
-            display();
+            if (relayIsOn(R1)) {
+                oled->setInverseFont(true);
+            }
+            oled->drawUTF8(0, 0, "R1");
+            oled->setInverseFont(false);
+
+            if (relayIsOn(R2)) {
+                oled->setInverseFont(true);
+            }
+            oled->drawUTF8(3, 0, "R2");
+            oled->setInverseFont(false);
+
+            char snrOutput[10]{};
+            dtostrf(snr, 2, 0, snrOutput);
+            strcat(snrOutput, "dB");
+            oled->drawUTF8(oled->getCols() - 8, 0, snrOutput);
+
+            float displayAngle = round((uint8_t) angle.i / 2);
+            char angleString[6]{};
+            char barOutput[16]{};
+            for (int i = 0; i < 12; ++i) {
+                if (i < displayAngle * 12 / 90) {
+                    strcat(barOutput, "#");
+                } else {
+                    strcat(barOutput, " ");
+                }
+            }
+            strcat(barOutput, ":");
+            dtostrf(displayAngle, 2, 0, angleString);
+            strcat(barOutput, angleString);
+            strcat(barOutput, "%");
+            oled->drawUTF8(0, 2, barOutput);
+
+            char tempOutput[18]{};
+            strcpy(tempOutput, "T:");
+            Format::temperature(tempOutput, currentTemp.f, true);
+            oled->drawUTF8(0, 4, tempOutput);
+
+            char humOutput[18]{};
+            strcpy(humOutput, "H:");
+            Format::humidity(humOutput, currentHum.f);
+            oled->drawUTF8(11, 4, humOutput);
+
+            char pressOutput[18]{};
+            strcpy(pressOutput, "P:");
+            Format::pressure(pressOutput, currentPressure.f);
+            oled->drawUTF8(0, 6, pressOutput);
         } else if (displayState == STATE_SET_TEMP) {
-            displayTemp();
+            oled->drawUTF8(5, 0, "setup");
+            oled->drawUTF8(2, 1, "temperature");
+            char output[8]{};
+            Format::temperature(output, requiredTemp, true);
+            oled->drawUTF8(5, 3, output);
         } else if (displayState == STATE_SET_R1) {
             displayRelay(R1);
         } else if (displayState == STATE_SET_R2) {
             displayRelay(R2);
         }
-
-        oled->setFont(u8g2_font_logisoso16_tf);
-
-        if (displayState == STATE_DISPLAY) {
-            if (dhtIsError) {
-                oled->drawUTF8(35, 32, "ERROR!");
-            } else {
-                display16();
-            }
-        } else if (displayState == STATE_SET_TEMP) {
-            displayTemp16();
-        } else if (displayState == STATE_SET_R1) {
-            displayRelay16(R1);
-        } else if (displayState == STATE_SET_R2) {
-            displayRelay16(R2);
-        }
-
-        oled->sendBuffer();
     }
 
     void setDisplayState(uint8_t state) {
@@ -242,36 +240,43 @@ public:
     }
 
     void sendData() {
+        oled->drawUTF8(oled->getCols() - 1, 0, "\xBB");
+
         LoRa.beginPacket();
 
-        LoRa.write(dhtIsError ? ERR_TEMP : 0);
+        LoRa.write(tempError ? ERR_TEMP : 0);
 
-        Float temp{};
-        temp.f = currentTemp;
-        LoRa.write(temp.b[0]);
-        LoRa.write(temp.b[1]);
-        LoRa.write(temp.b[2]);
-        LoRa.write(temp.b[3]);
+        LoRa.write(currentTemp.b[0]);
+        LoRa.write(currentTemp.b[1]);
+        LoRa.write(currentTemp.b[2]);
+        LoRa.write(currentTemp.b[3]);
 
-        Float hum{};
-        hum.f = currentHum;
-        LoRa.write(hum.b[0]);
-        LoRa.write(hum.b[1]);
-        LoRa.write(hum.b[2]);
-        LoRa.write(hum.b[3]);
+        LoRa.write(currentHum.b[0]);
+        LoRa.write(currentHum.b[1]);
+        LoRa.write(currentHum.b[2]);
+        LoRa.write(currentHum.b[3]);
 
-        LoRa.write(angle);
+        LoRa.write(currentPressure.b[0]);
+        LoRa.write(currentPressure.b[1]);
+        LoRa.write(currentPressure.b[2]);
+        LoRa.write(currentPressure.b[3]);
+
+        LoRa.write(angle.b[0]);
+        LoRa.write(angle.b[1]);
+
         LoRa.write((uint8_t) relayIsOn(R1));
         LoRa.write((uint8_t) relayIsOn(R2));
 
         LoRa.endPacket();
         LoRa.receive();
+
+        oled->drawUTF8(oled->getCols() - 1, 0, " ");
     }
 
     void tick() {
         tempControl();
         encoder->tick();
-        uint16_t pos = (uint16_t) encoder->getPosition();
+        long pos = encoder->getPosition();
         if (pos != prevPosition) {
             if (displayState == STATE_DISPLAY) {
                 updateSrv(pos - prevPosition);
@@ -291,6 +296,7 @@ public:
 
         int packetSize = LoRa.parsePacket();
         if (packetSize) {
+            oled->drawUTF8(oled->getCols() - 1, 0, "\xAB");
 
             uint8_t cmd = (uint8_t) LoRa.read();
             if (cmd == CMD_UP) {
@@ -302,6 +308,7 @@ public:
             }
 
             snr = LoRa.packetSnr();
+            oled->drawUTF8(oled->getCols() - 1, 0, " ");
         }
     }
 };
@@ -310,8 +317,8 @@ RemoteController *ctrl;
 Task *task;
 Switcher *sw1;
 
-void updateDHT22() {
-    ctrl->updateDHT22();
+void updateBME() {
+    ctrl->updateBME();
 }
 
 void sendData() {
@@ -319,7 +326,7 @@ void sendData() {
 }
 
 void toDisplay() {
-    ctrl->updateDHT22();
+    ctrl->updateBME();
     ctrl->setDisplayState(RemoteController::STATE_DISPLAY);
 }
 
@@ -340,9 +347,9 @@ void setup(void) {
     ctrl->render();
 
     task = new Task();
-    task->each(updateDHT22, 8000);
-    task->each(sendData, 5000);
-    task->one(toDisplay, 2000);
+    task->each(updateBME, 8000);
+    task->each(sendData, 10000);
+    task->one(toDisplay, 5000);
 
     sw1 = new Switcher(A7);
     sw1->addHandler(toSettings, Switcher::DEFAULT_PRESS);

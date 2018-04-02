@@ -17,20 +17,23 @@ protected:
     static const uint8_t CMD_UP = 1;
     static const uint8_t CMD_DOWN = 2;
 
-    U8G2_SH1106_128X64_NONAME_F_4W_HW_SPI *oled;
-    float currentTemp = 0;
-    float currentHum = 0;
-    uint8_t angle = 0;
     float snr = 0;
 
+    union Int {
+        int i = 0;
+        uint8_t b[sizeof(int)];
+    };
+
+    Int angle;
+
     union Float {
-        float f;
+        float f = 0;
         uint8_t b[sizeof(float)];
     };
 
-    void display();
-
-    void display16();
+    Float currentTemp;
+    Float currentHum;
+    Float currentPressure;
 
     virtual bool relayIsOn(uint8_t pin)= 0;
 
