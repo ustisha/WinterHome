@@ -28,6 +28,7 @@
 
 ###Библиотеки необходимы для работы
 * https://github.com/thijse/Arduino-EEPROMEx
+* https://github.com/shield-9/Arduino-BME280
 * https://github.com/sandeepmistry/arduino-LoRa 
 * https://github.com/mathertel/RotaryEncoder
 * https://github.com/olikraus/u8g2

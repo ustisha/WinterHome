@@ -26,19 +26,23 @@ void Format::humidity(char *formatted, float h) {
     strcat(formatted, "%");
 }
 
-void Format::pressure(char *formatted, float hpa, uint8_t type) {
+void Format::pressure(char *formatted, float hpa, uint8_t type, bool units) {
     char tempString[6]{};
     if (type == Format::PRESSURE_HPA) {
         dtostrf(hpa, 2, 1, tempString);
         strcat(formatted, tempString);
-        strcat(formatted, "hPa ");
+        if (units) {
+            strcat(formatted, "hPa");
+        }
     } else if (type == Format::PRESSURE_MMHG) {
         dtostrf((hpa / 1.33322387415), 2, 1, tempString);
         strcat(formatted, tempString);
-        strcat(formatted, "mmHg");
+        if (units) {
+            strcat(formatted, "mmHg");
+        }
     }
 }
 
 void Format::pressure(char *formatted, float hpa) {
-    Format::pressure(formatted, hpa, Format::PRESSURE_MMHG);
+    Format::pressure(formatted, hpa, Format::PRESSURE_MMHG, true);
 }

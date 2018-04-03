@@ -14,6 +14,8 @@ class HomeController : public Controller {
     const uint16_t NO_SIGNAL_TIMEOUT = 60000;
 
 protected:
+    U8G2_SH1106_128X64_NONAME_F_4W_HW_SPI *oled;
+
     uint8_t r1IsOn = 0;
     uint8_t r2IsOn = 0;
 
@@ -24,7 +26,8 @@ protected:
 
 public:
     HomeController(uint8_t cs, uint8_t dc, uint8_t reset) : Controller(cs, dc, reset) {
-
+        oled = new U8G2_SH1106_128X64_NONAME_F_4W_HW_SPI(U8G2_R0, cs, dc, reset);
+        oled->begin();
     }
 
     bool relayIsOn(uint8_t pin) override {
@@ -40,45 +43,106 @@ public:
     void render() override {
         oled->clearBuffer();
 
-        oled->drawRFrame(0, 0, 128, 64, 4);
         oled->setFont(u8g2_font_mercutio_basic_nbp_t_all);
 
         if (this->errCode == ERR_TEMP) {
             oled->drawUTF8(25, 20, "ошибка датчика");
             oled->drawUTF8(30, 40, "температуры!");
         } else if (this->noSignal != 0) {
-            oled->drawUTF8(35, 20, "нет сигнала!");
-        } else {
-            this->display();
-        }
-
-        oled->setFont(u8g2_font_logisoso16_tf);
-
-        if (this->errCode != 0) {
-
-        } else if (this->noSignal != 0) {
+            oled->drawUTF8(35, 35, "нет сигнала!");
             char noSignalOutput[10]{};
-            sprintf(noSignalOutput, "%u min.", (unsigned int) ceil(this->noSignal / 1000 / 60));
-            oled->drawUTF8(38, 50, noSignalOutput);
+            sprintf(noSignalOutput, "%u мин.", (unsigned int) ceil(this->noSignal / 1000 / 60));
+            oled->drawUTF8(50, 50, noSignalOutput);
         } else {
-            this->display16();
+            char snrOutput[10]{};
+            dtostrf(snr, 2, 0, snrOutput);
+            strcat(snrOutput, "dB");
+            oled->drawUTF8(80, 14, snrOutput);
+
+            if (relayIsOn(R1)) {
+                oled->drawBox(1, 1, 16, 16);
+                oled->setDrawColor(2);
+                oled->setFontMode(1);
+            } else {
+                oled->drawFrame(1, 1, 16, 16);
+                oled->setDrawColor(1);
+                oled->setFontMode(0);
+            }
+            oled->drawUTF8(4, 14, "Р1");
+
+            if (relayIsOn(R2)) {
+                oled->drawBox(20, 1, 16, 16);
+                oled->setDrawColor(2);
+                oled->setFontMode(1);
+            } else {
+                oled->drawFrame(20, 1, 16, 16);
+                oled->setDrawColor(1);
+                oled->setFontMode(0);
+            }
+            oled->drawUTF8(23, 14, "Р2");
+
+            oled->drawFrame(1, 20, 126, 16);
+            oled->setDrawColor(2);
+            oled->setFontMode(1);
+
+            float displayAngle = round((uint8_t) angle.i / 2);
+            char angleString[18]{};
+            char angleValueString[6]{};
+            strcat(angleString, "вент.");
+            dtostrf(displayAngle, 2, 0, angleValueString);
+            strcat(angleString, angleValueString);
+            strcat(angleString, "%");
+            oled->drawUTF8(40, 33, angleString);
+
+            long barLen = round(124 * displayAngle / 100);
+            oled->drawBox(2, 21, barLen, 14);
+            oled->setDrawColor(1);
+            oled->setFontMode(0);
+
+            char humOutput[16]{};
+            strcat(humOutput, "влаж. ");
+            Format::humidity(humOutput, currentHum.f);
+            oled->drawUTF8(65, 49, humOutput);
+
+            char pressOutput[24]{};
+            strcat(pressOutput, "дав. ");
+            Format::pressure(pressOutput, currentPressure.f, Format::PRESSURE_MMHG, false);
+            oled->drawUTF8(65, 62, pressOutput);
+
+            oled->setFont(u8g2_font_logisoso16_tf);
+
+            char tempOutput[10]{};
+            Format::temperature(tempOutput, currentTemp.f, true);
+            oled->drawUTF8(2, 60, tempOutput);
         }
 
         oled->sendBuffer();
     }
 
     void upClick() {
+        oled->drawUTF8(118, 14, "\xBB");
+        oled->sendBuffer();
+
         LoRa.beginPacket();
         LoRa.write(CMD_UP);
         LoRa.endPacket();
         LoRa.receive();
+
+        oled->drawUTF8(118, 14, " ");
+        oled->sendBuffer();
     }
 
     void downClick() {
+        oled->drawUTF8(118, 14, "\xBB");
+        oled->sendBuffer();
+
         LoRa.beginPacket();
         LoRa.write(CMD_DOWN);
         LoRa.endPacket();
         LoRa.receive();
+
+        oled->drawUTF8(118, 14, " ");
+        oled->sendBuffer();
     }
 
     void tick() {
@@ -90,32 +154,39 @@ public:
 
         int packetSize = LoRa.parsePacket();
         if (packetSize) {
+            oled->drawUTF8(118, 14, "\xAB");
+            oled->sendBuffer();
 
-            this->errCode = (uint8_t) LoRa.read();
+            errCode = (uint8_t) LoRa.read();
 
-            Float temp{};
-            temp.b[0] = (uint8_t) LoRa.read();
-            temp.b[1] = (uint8_t) LoRa.read();
-            temp.b[2] = (uint8_t) LoRa.read();
-            temp.b[3] = (uint8_t) LoRa.read();
-            this->currentTemp = temp.f;
+            currentTemp.b[0] = (uint8_t) LoRa.read();
+            currentTemp.b[1] = (uint8_t) LoRa.read();
+            currentTemp.b[2] = (uint8_t) LoRa.read();
+            currentTemp.b[3] = (uint8_t) LoRa.read();
 
-            Float hum{};
-            hum.b[0] = (uint8_t) LoRa.read();
-            hum.b[1] = (uint8_t) LoRa.read();
-            hum.b[2] = (uint8_t) LoRa.read();
-            hum.b[3] = (uint8_t) LoRa.read();
-            this->currentHum = hum.f;
+            currentHum.b[0] = (uint8_t) LoRa.read();
+            currentHum.b[1] = (uint8_t) LoRa.read();
+            currentHum.b[2] = (uint8_t) LoRa.read();
+            currentHum.b[3] = (uint8_t) LoRa.read();
 
-            this->angle = (uint8_t) LoRa.read();
+            currentPressure.b[0] = (uint8_t) LoRa.read();
+            currentPressure.b[1] = (uint8_t) LoRa.read();
+            currentPressure.b[2] = (uint8_t) LoRa.read();
+            currentPressure.b[3] = (uint8_t) LoRa.read();
 
-            this->r1IsOn = (uint8_t) LoRa.read();
-            this->r2IsOn = (uint8_t) LoRa.read();
+            angle.b[0] = (uint8_t) LoRa.read();
+            angle.b[1] = (uint8_t) LoRa.read();
 
-            this->snr = LoRa.packetSnr();
+            r1IsOn = (uint8_t) LoRa.read();
+            r2IsOn = (uint8_t) LoRa.read();
 
-            this->lastReceive = m;
-            this->noSignal = 0;
+            snr = LoRa.packetSnr();
+
+            lastReceive = m;
+            noSignal = 0;
+
+            oled->drawUTF8(118, 14, " ");
+            oled->sendBuffer();
         }
     }
 };

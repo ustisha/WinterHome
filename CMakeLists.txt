@@ -29,8 +29,6 @@ link_directories(${CMAKE_SOURCE_DIR}/libraries)
 link_directories(C:\\Arduino\\libraries)
 
 set(U8g2lib_RECURSE True)
-set(Servo_RECURSE True)
-set(BME280_RECURSE True)
 
 # add the project directory into build
 add_subdirectory(home)

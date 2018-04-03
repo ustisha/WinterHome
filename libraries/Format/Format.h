@@ -11,7 +11,7 @@ public:
     static void temperature(char *formatted, float t, bool c);
     static void humidity(char *formatted, float h);
     static void pressure(char *formatted, float hpa);
-    static void pressure(char *formatted, float hpa, uint8_t type);
+    static void pressure(char *formatted, float hpa, uint8_t type, bool units);
 };
 
 #endif
