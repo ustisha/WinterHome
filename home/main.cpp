@@ -148,6 +148,10 @@ public:
     void tick() {
         unsigned long m = millis();
 
+        if (lastReceive > m) {
+            lastReceive = m;
+        }
+
         if ((m - lastReceive) >= NO_SIGNAL_TIMEOUT) {
             noSignal = m - lastReceive;
         }

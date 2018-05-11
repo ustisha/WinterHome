@@ -41,6 +41,9 @@ bool Switcher::isPressed() {
 
 void Switcher::tick() {
     unsigned long m = millis();
+    if (start != 0 && start > m) {
+        start = m;
+    }
     if (isPressed() && start == 0) {
         start = m;
         return;
