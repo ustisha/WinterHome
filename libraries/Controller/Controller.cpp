@@ -1,4 +1,3 @@
-#include "Arduino.h"
 #include "Controller.h"
 
 Controller::Controller(uint8_t cs, uint8_t dc, uint8_t reset) {
@@ -10,7 +9,4 @@ Controller::Controller(uint8_t cs, uint8_t dc, uint8_t reset) {
     LoRa.setSpreadingFactor(12);
     LoRa.enableCrc();
     LoRa.idle();
-
-    // Задержка после инициализации.
-    delay(1000);
 }

@@ -33,7 +33,6 @@ protected:
 
     Float currentTemp;
     Float currentHum;
-    Float currentPressure;
 
     virtual bool relayIsOn(uint8_t pin)= 0;
 

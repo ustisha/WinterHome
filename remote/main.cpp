@@ -6,7 +6,7 @@
 #include <Servo.h>
 #include <Format.h>
 #include <Wire.h>
-#include <BME280.h>
+#include <dht_nonblocking.h>
 #include <Task.h>
 #include <RotaryEncoder.h>
 #include <Switcher.h>
@@ -19,15 +19,18 @@ const uint8_t OLED_DC = 6;
 const uint8_t OLED_RESET = 5;
 
 const uint8_t SRV = 3;
+const uint8_t DHT22 = 4;
 
 class RemoteController : public Controller {
 protected:
     U8X8_SH1106_128X64_NONAME_4W_HW_SPI *oled;
-    BME280 *bme;
+    DHT_nonblocking *dht;
     Servo *srv;
     RotaryEncoder *encoder;
 
-    bool tempError = false;
+//    uint8_t relayMode = LOW;
+    uint8_t relayMode = HIGH;
+    bool tempReading = false;
     long prevPosition = 0;
     float r1Threshold = 0.5;
     float r2Threshold = 1;
@@ -52,12 +55,15 @@ protected:
     }
 
     bool relayIsOn(uint8_t pin) override {
+        if (relayMode) {
+            return digitalRead(pin);
+        }
         return !digitalRead(pin);
     }
 
     void relayOn(uint8_t pin) {
         bool change = !relayIsOn(pin);
-        digitalWrite(pin, LOW);
+        digitalWrite(pin, relayMode ? HIGH : LOW);
         if (change) {
             render();
         }
@@ -65,18 +71,13 @@ protected:
 
     void relayOff(uint8_t pin) {
         bool change = relayIsOn(pin);
-        digitalWrite(pin, HIGH);
+        digitalWrite(pin, relayMode ? LOW : HIGH);
         if (change) {
             render();
         }
     }
 
     void tempControl() {
-        if (tempError) {
-            relayOff(R1);
-            relayOff(R2);
-            return;
-        }
         if (currentTemp.f <= (requiredTemp - r1Threshold)) {
             relayOn(R1);
             if (currentTemp.f <= (requiredTemp - r2Threshold)) {
@@ -100,8 +101,12 @@ public:
     RemoteController(uint8_t cs, uint8_t dc, uint8_t reset) : Controller(cs, dc, reset) {
         pinMode(R1, OUTPUT);
         pinMode(R2, OUTPUT);
-        digitalWrite(R1, HIGH);
-        digitalWrite(R2, HIGH);
+
+        relayOff(R1);
+        relayOff(R2);
+
+        currentTemp.f = 0;
+        currentHum.f = 0;
 
         oled = new U8X8_SH1106_128X64_NONAME_4W_HW_SPI(cs, dc, reset);
         oled->begin();
@@ -123,8 +128,7 @@ public:
         srv->attach(SRV, 600, 3000);
         updateSrv(0);
 
-        bme = new BME280();
-        bme->begin(0x76);
+        dht = new DHT_nonblocking(DHT22, DHT_TYPE_22);
 
         encoder = new RotaryEncoder(A2, A3);
     }
@@ -142,12 +146,8 @@ public:
         render();
     }
 
-    void updateBME() {
-        bme->getData(&currentTemp.f, &currentPressure.f, &currentHum.f);
-        bool m, update;
-        bme->getStatus(&m, &update);
-        tempError = m;
-        render();
+    void startReadingDHT22() {
+        tempReading = true;
     }
 
     void render() override {
@@ -203,20 +203,16 @@ public:
             strcat(barOutput, "%");
             oled->drawUTF8(0, 2, barOutput);
 
-            char tempOutput[18]{};
-            strcpy(tempOutput, "T:");
-            Format::temperature(tempOutput, currentTemp.f, true);
-            oled->drawUTF8(0, 4, tempOutput);
-
             char humOutput[18]{};
             strcpy(humOutput, "H:");
             Format::humidity(humOutput, currentHum.f);
-            oled->drawUTF8(11, 4, humOutput);
+            oled->drawUTF8(0, 4, humOutput);
 
-            char pressOutput[18]{};
-            strcpy(pressOutput, "P:");
-            Format::pressure(pressOutput, currentPressure.f);
-            oled->drawUTF8(0, 6, pressOutput);
+            oled->setFont(u8x8_font_px437wyse700b_2x2_f);
+            char tempOutput[18]{};
+            strcpy(tempOutput, "T:");
+            Format::temperature(tempOutput, currentTemp.f, true);
+            oled->drawUTF8(0, 6, tempOutput);
         } else if (displayState == STATE_SET_TEMP) {
             oled->drawUTF8(5, 0, "setup");
             oled->drawUTF8(2, 1, "temperature");
@@ -240,11 +236,11 @@ public:
     }
 
     void sendData() {
-        oled->drawUTF8(oled->getCols() - 1, 0, "\xBB");
+        oled->drawUTF8(oled->getCols() - 2, 0, "\xBB");
 
         LoRa.beginPacket();
 
-        LoRa.write(tempError ? ERR_TEMP : 0);
+        LoRa.write(0);
 
         LoRa.write(currentTemp.b[0]);
         LoRa.write(currentTemp.b[1]);
@@ -256,10 +252,10 @@ public:
         LoRa.write(currentHum.b[2]);
         LoRa.write(currentHum.b[3]);
 
-        LoRa.write(currentPressure.b[0]);
-        LoRa.write(currentPressure.b[1]);
-        LoRa.write(currentPressure.b[2]);
-        LoRa.write(currentPressure.b[3]);
+        LoRa.write(0);
+        LoRa.write(0);
+        LoRa.write(0);
+        LoRa.write(0);
 
         LoRa.write(angle.b[0]);
         LoRa.write(angle.b[1]);
@@ -274,7 +270,11 @@ public:
     }
 
     void tick() {
-        tempControl();
+        if (tempReading && dht->measure(&currentTemp.f, &currentHum.f)) {
+            tempReading = false;
+            render();
+            tempControl();
+        }
         encoder->tick();
         long pos = encoder->getPosition();
         if (pos != prevPosition) {
@@ -317,8 +317,8 @@ RemoteController *ctrl;
 Task *task;
 Switcher *sw1;
 
-void updateBME() {
-    ctrl->updateBME();
+void updateDHT22() {
+    ctrl->startReadingDHT22();
 }
 
 void sendData() {
@@ -326,7 +326,7 @@ void sendData() {
 }
 
 void toDisplay() {
-    ctrl->updateBME();
+    ctrl->startReadingDHT22();
     ctrl->setDisplayState(RemoteController::STATE_DISPLAY);
 }
 
@@ -347,7 +347,7 @@ void setup(void) {
     ctrl->render();
 
     task = new Task();
-    task->each(updateBME, 8000);
+    task->each(updateDHT22, 8000);
     task->each(sendData, 10000);
     task->one(toDisplay, 5000);
 
