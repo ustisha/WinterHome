@@ -18,4 +18,4 @@ link_directories(C:\\Arduino\\libraries)
 
 # add the project directory into build
 #add_subdirectory(home)
-add_subdirectory(remote)
+#add_subdirectory(remote)

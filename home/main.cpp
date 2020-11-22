@@ -104,11 +104,6 @@ public:
             Format::humidity(humOutput, currentHum.f);
             oled->drawUTF8(65, 49, humOutput);
 
-            char pressOutput[24]{};
-            strcat(pressOutput, "дав. ");
-            Format::pressure(pressOutput, currentPressure.f, Format::PRESSURE_MMHG, false);
-            oled->drawUTF8(65, 62, pressOutput);
-
             oled->setFont(u8g2_font_logisoso16_tf);
 
             char tempOutput[10]{};
@@ -173,10 +168,10 @@ public:
             currentHum.b[2] = (uint8_t) LoRa.read();
             currentHum.b[3] = (uint8_t) LoRa.read();
 
-            currentPressure.b[0] = (uint8_t) LoRa.read();
-            currentPressure.b[1] = (uint8_t) LoRa.read();
-            currentPressure.b[2] = (uint8_t) LoRa.read();
-            currentPressure.b[3] = (uint8_t) LoRa.read();
+            LoRa.read();
+            LoRa.read();
+            LoRa.read();
+            LoRa.read();
 
             angle.b[0] = (uint8_t) LoRa.read();
             angle.b[1] = (uint8_t) LoRa.read();

@@ -5,14 +5,14 @@ set(PROJECT_NAME home)
 project(${PROJECT_NAME} C CXX)
 
 set(${PROJECT_NAME}_BOARD nano)
-set(${PROJECT_NAME}_BOARD_CPU atmega328)
+set(${PROJECT_NAME}_BOARD_CPU atmega328old)
 set(nano.build.mcu "atmega328p")
 
 # Define the source code
 set(${PROJECT_NAME}_SRCS main.cpp)
 
 # Define the port for uploading code to the Arduino
-set(${PROJECT_NAME}_PORT COM7)
+set(${PROJECT_NAME}_PORT COM4)
 
 # Command to generate code arduino firmware (.hex file)
 generate_arduino_firmware(${PROJECT_NAME})
