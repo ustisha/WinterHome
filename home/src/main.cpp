@@ -1,13 +1,57 @@
 #include "Arduino.h"
 
-#include <SPI.h>
-#include <Switcher.h>
-#include <Controller.h>
+#include <Button.h>
 #include <Task.h>
+#include <LoRa.h>
+#include <U8g2lib.h>
+#include <Format.h>
+
+const uint8_t R1 = A0;
+const uint8_t R2 = A1;
+const uint8_t ERR_TEMP = 1;
 
 const uint8_t OLED_CS = 8;
 const uint8_t OLED_DC = 6;
 const uint8_t OLED_RESET = 5;
+
+class Controller : public HandlerInterface {
+
+protected:
+    float snr = 0;
+
+    union Int {
+        int i = 0;
+        uint8_t b[sizeof(int)];
+    };
+
+    Int angle;
+
+    union Float {
+        float f = 0;
+        uint8_t b[sizeof(float)];
+    };
+
+    Float currentTemp;
+    Float currentHum;
+
+    virtual bool relayIsOn(uint8_t pin)= 0;
+
+public:
+
+    static const uint8_t CMD_UP = 1;
+    static const uint8_t CMD_DOWN = 2;
+
+    Controller(uint8_t cs, uint8_t dc, uint8_t reset)
+    {
+        LoRa.begin(433E6);
+        LoRa.setTxPower(16);
+        LoRa.setSpreadingFactor(8);
+        LoRa.enableCrc();
+        LoRa.receive();
+    }
+
+    virtual void render() = 0;
+};
 
 class HomeController : public Controller {
 
@@ -168,11 +212,6 @@ public:
             currentHum.b[2] = (uint8_t) LoRa.read();
             currentHum.b[3] = (uint8_t) LoRa.read();
 
-            LoRa.read();
-            LoRa.read();
-            LoRa.read();
-            LoRa.read();
-
             angle.b[0] = (uint8_t) LoRa.read();
             angle.b[1] = (uint8_t) LoRa.read();
 
@@ -188,36 +227,37 @@ public:
             oled->sendBuffer();
         }
     }
+
+    void call(uint8_t type, uint8_t idx) override
+    {
+        if (type ==  CMD_UP) {
+            upClick();
+        } else if (type == CMD_DOWN) {
+            downClick();
+        }
+    }
 };
 
 HomeController *ctrl;
 Task *task;
-Switcher *swUp;
-Switcher *swDown;
+Button *swUp;
+Button *swDown;
 
 void renderDisplay() {
     ctrl->render();
 }
 
-void upClick() {
-    ctrl->upClick();
-}
-
-void downClick() {
-    ctrl->downClick();
-}
-
 void setup() {
     ctrl = new HomeController(OLED_CS, OLED_DC, OLED_RESET);
     ctrl->render();
-    task = new Task();
+    task = new Task(1);
     task->each(renderDisplay, 1000);
 
-    swUp = new Switcher(A1);
-    swUp->addHandler(upClick, Switcher::DEFAULT_PRESS);
+    swUp = new Button(A1, 1, false);
+    swUp->addHandler(ctrl, Controller::CMD_UP);
 
-    swDown = new Switcher(A0);
-    swDown->addHandler(downClick, Switcher::DEFAULT_PRESS);
+    swDown = new Button(A0, 1, false);
+    swDown->addHandler(ctrl, Controller::CMD_DOWN);
 }
 
 void loop() {
